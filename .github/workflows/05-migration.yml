@@ -1,0 +1,132 @@
+name: "05 · Migration"
+
+on:
+  workflow_dispatch:
+    inputs:
+      step:
+        description: "Migration step to execute"
+        required: true
+        type: choice
+        options:
+          - "01-backup"
+          - "02-restore"
+          - "03-shift-10"
+          - "03-shift-30"
+          - "03-shift-50"
+          - "03-shift-90"
+          - "04-cutover"
+          - "05-smoke-test"
+      dry_run:
+        description: "Dry run (no changes)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: "us-east-1"
+  CLUSTER1_NAME: "eks-cluster-1"
+  CLUSTER2_NAME: "eks-cluster-2"
+  VELERO_BACKUP_NAME: "pre-migration"
+
+jobs:
+  migrate:
+    name: "Migration: ${{ github.event.inputs.step }}"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Install tools
+        run: |
+          # Install velero CLI
+          VELERO_VERSION="v1.15.0"
+          curl -Lo /tmp/velero.tar.gz \
+            https://github.com/vmware-tanzu/velero/releases/download/${VELERO_VERSION}/velero-${VELERO_VERSION}-linux-amd64.tar.gz
+          tar -xzf /tmp/velero.tar.gz -C /tmp
+          sudo mv /tmp/velero-${VELERO_VERSION}-linux-amd64/velero /usr/local/bin/
+
+      - name: Configure kubeconfig for cluster1
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.CLUSTER1_NAME }} \
+            --region ${{ env.AWS_REGION }} \
+            --alias cluster1
+
+      - name: Configure kubeconfig for cluster2
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.CLUSTER2_NAME }} \
+            --region ${{ env.AWS_REGION }} \
+            --alias cluster2
+
+      # ── Step 01: Create Velero backup from cluster1 ──────────────────────
+      - name: "01 · Create Velero backup"
+        if: ${{ github.event.inputs.step == '01-backup' }}
+        run: |
+          chmod +x migration/01-backup.sh
+          DRY_RUN=${{ github.event.inputs.dry_run }} \
+          BACKUP_NAME=${{ env.VELERO_BACKUP_NAME }} \
+            migration/01-backup.sh
+
+      # ── Step 02: Restore backup to cluster2 ─────────────────────────────
+      - name: "02 · Restore Velero backup to cluster2"
+        if: ${{ github.event.inputs.step == '02-restore' }}
+        run: |
+          chmod +x migration/02-restore.sh
+          DRY_RUN=${{ github.event.inputs.dry_run }} \
+          BACKUP_NAME=${{ env.VELERO_BACKUP_NAME }} \
+            migration/02-restore.sh
+
+      # ── Step 03: Progressive traffic shifts ──────────────────────────────
+      - name: "03 · Traffic shift"
+        if: ${{ startsWith(github.event.inputs.step, '03-shift') }}
+        run: |
+          WEIGHT="${{ github.event.inputs.step }}"
+          PCT="${WEIGHT##*-shift-}"
+          C1=$((100 - PCT))
+          C2=$PCT
+          echo "Shifting: cluster1=$C1 cluster2=$C2"
+
+          if [ "${{ github.event.inputs.dry_run }}" != "true" ]; then
+            cd infra/cluster2
+            terraform init
+            terraform apply \
+              -var="cluster1_weight=$C1" \
+              -var="cluster2_weight=$C2" \
+              -var="acme_email=${{ secrets.ACME_EMAIL }}" \
+              -auto-approve \
+              -target=module.route53
+          fi
+
+      # ── Step 04: Full cutover ─────────────────────────────────────────────
+      - name: "04 · Full cutover (cluster1 weight=0)"
+        if: ${{ github.event.inputs.step == '04-cutover' }}
+        run: |
+          chmod +x migration/04-cutover.sh
+          DRY_RUN=${{ github.event.inputs.dry_run }} \
+            migration/04-cutover.sh
+
+      # ── Step 05: Smoke test ───────────────────────────────────────────────
+      - name: "05 · Smoke test"
+        if: ${{ github.event.inputs.step == '05-smoke-test' }}
+        run: |
+          echo "Running smoke tests against https://app.navelmountech.com"
+          for path in /health /ready /api/tasks; do
+            STATUS=$(curl -sk -o /dev/null -w "%{http_code}" https://app.navelmountech.com${path})
+            echo "$path → $STATUS"
+            [ "$STATUS" -eq 200 ] || [ "$STATUS" -eq 404 ] || exit 1
+          done
+          echo "Smoke tests passed!"

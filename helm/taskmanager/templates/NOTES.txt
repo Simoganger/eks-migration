@@ -1,0 +1,20 @@
+TaskManager has been deployed!
+
+Application URL:
+  https://{{ .Values.istio.host }}
+
+Check deployment status:
+  kubectl get pods -n {{ .Release.Namespace }}
+  kubectl get svc -n istio-system
+
+Get Istio Ingress Gateway NLB hostname:
+  kubectl get svc -n istio-system istio-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+
+View application logs:
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name=taskmanager -f
+
+Check ExternalSecret sync status:
+  kubectl get externalsecret -n {{ .Release.Namespace }}
+
+ArgoCD sync status:
+  kubectl get application -n argocd taskmanager

@@ -1,0 +1,10 @@
+# Overrides applied on cluster2 during and after migration
+# DB_HOST points to the same RDS instance (reachable via VPC Peering)
+configMap:
+  DB_HOST: ""   # Replace with RDS host from cluster1 terraform output
+
+externalSecret:
+  remoteSecretName: "/prod/taskmanager/db"
+
+# Scale down replicas during initial migration to reduce DB connection load
+replicaCount: 2

@@ -1,0 +1,106 @@
+replicaCount: 2
+
+image:
+  repository: simoganger/taskmanager
+  tag: latest
+  pullPolicy: Always
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: taskmanager
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+persistence:
+  enabled: true
+  storageClass: ""       # EKS Auto Mode uses default EBS StorageClass
+  accessMode: ReadWriteOnce
+  size: 5Gi
+  mountPath: /uploads
+
+configMap:
+  APP_PORT: "3000"
+  DB_HOST: ""            # Set via tfvars / ArgoCD parameter
+  DB_PORT: "5432"
+  DB_NAME: "taskmanager"
+  UPLOAD_DIR: "/uploads"
+  NODE_ENV: "production"
+
+externalSecret:
+  enabled: true
+  secretStoreName: aws-secrets-manager
+  secretStoreKind: ClusterSecretStore
+  secretName: taskmanager-db-secret
+  refreshInterval: 1h
+  remoteSecretName: ""   # e.g. /prod/taskmanager/db — set via tfvars
+  keys:
+    - secretKey: DB_USER
+      remoteKey: username
+    - secretKey: DB_PASSWORD
+      remoteKey: password
+
+istio:
+  enabled: true
+  gateway:
+    name: taskmanager-gateway
+    selector: istio-ingress
+  host: app.navelmountech.com
+  tlsSecretName: taskmanager-tls
+  corsAllowOrigins:
+    - "https://app.navelmountech.com"
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 3000
+  initialDelaySeconds: 15
+  periodSeconds: 20
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 3000
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  failureThreshold: 3
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+podAnnotations: {}
+
+nodeSelector: {}
+tolerations: []
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - taskmanager
+          topologyKey: kubernetes.io/hostname

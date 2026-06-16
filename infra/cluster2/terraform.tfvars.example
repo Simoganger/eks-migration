@@ -1,0 +1,28 @@
+aws_region      = "us-east-1"
+environment     = "prod"
+cluster_name    = "eks-cluster-2"
+cluster_version = "1.32"
+vpc_cidr        = "10.1.0.0/16"  # Must not overlap with cluster1 (10.0.0.0/16)
+
+tf_state_bucket = "eks-migration-tfstate"
+
+zone_name    = "navelmountech.com"
+app_hostname = "app.navelmountech.com"
+acme_email   = "admin@navelmountech.com"
+
+# Set after cluster2 first apply:
+# istio_lb_hostname = "yyyyyyyy.elb.us-east-1.amazonaws.com"
+
+# Cluster1 NLB hostname (from cluster1 outputs):
+# cluster1_lb_hostname = "xxxxxxxx.elb.us-east-1.amazonaws.com"
+
+# Progressive traffic weights — start at 100/0, shift to 0/100
+cluster1_weight = 100
+cluster2_weight = 0
+
+admin_role_arns = [
+  # "arn:aws:iam::123456789012:role/MyAdminRole"
+]
+
+git_repo_url  = "https://github.com/your-org/eks-migration"
+app_image_tag = "latest"

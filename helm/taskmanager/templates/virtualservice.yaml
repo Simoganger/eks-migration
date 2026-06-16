@@ -1,0 +1,49 @@
+{{- if .Values.istio.enabled }}
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{ include "taskmanager.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "taskmanager.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - {{ .Values.istio.host }}
+  gateways:
+    - {{ .Values.istio.gateway.name }}
+  http:
+    - match:
+        - uri:
+            prefix: /api
+        - uri:
+            prefix: /health
+        - uri:
+            prefix: /ready
+        - uri:
+            prefix: /metrics
+      route:
+        - destination:
+            host: {{ include "taskmanager.fullname" . }}
+            port:
+              number: {{ .Values.service.port }}
+      corsPolicy:
+        allowOrigins:
+          {{- range .Values.istio.corsAllowOrigins }}
+          - exact: {{ . }}
+          {{- end }}
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        allowHeaders:
+          - Content-Type
+          - Authorization
+        maxAge: "24h"
+    - route:
+        - destination:
+            host: {{ include "taskmanager.fullname" . }}
+            port:
+              number: {{ .Values.service.port }}
+{{- end }}

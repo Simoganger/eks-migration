@@ -1,0 +1,12 @@
+apiVersion: v2
+name: taskmanager
+description: Task Manager — EKS Migration demo application
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - nodejs
+  - postgresql
+  - eks
+maintainers:
+  - name: simoganger

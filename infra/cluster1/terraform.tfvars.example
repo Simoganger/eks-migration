@@ -1,0 +1,25 @@
+aws_region      = "us-east-1"
+environment     = "prod"
+cluster_name    = "eks-cluster-1"
+cluster_version = "1.32"
+vpc_cidr        = "10.0.0.0/16"
+
+zone_name    = "navelmountech.com"
+app_hostname = "app.navelmountech.com"
+acme_email   = "admin@navelmountech.com"
+
+# Set after first `terraform apply` once the Istio NLB is provisioned:
+# istio_lb_hostname = "xxxxxxxx.elb.us-east-1.amazonaws.com"
+
+admin_role_arns = [
+  # "arn:aws:iam::123456789012:role/MyAdminRole"
+]
+
+db_name     = "taskmanager"
+db_username = "taskadmin"
+db_password = "CHANGE_ME_USE_SECRETS"  # Use a strong password or pass via TF_VAR_db_password
+
+rds_instance_class      = "db.t3.medium"
+rds_multi_az            = true
+rds_deletion_protection = true
+rds_skip_final_snapshot = false

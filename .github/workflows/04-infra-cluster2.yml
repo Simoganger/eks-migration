@@ -1,0 +1,77 @@
+name: "04 · Infrastructure Cluster 2"
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Terraform action"
+        required: true
+        default: "plan"
+        type: choice
+        options: [plan, apply, destroy]
+      cluster1_weight:
+        description: "Route53 weight for cluster1 (0-100)"
+        required: false
+        default: "100"
+      cluster2_weight:
+        description: "Route53 weight for cluster2 (0-100)"
+        required: false
+        default: "0"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_VERSION: "1.9.8"
+  AWS_REGION: "us-east-1"
+  WORKING_DIR: "infra/cluster2"
+
+jobs:
+  terraform:
+    name: "Terraform ${{ github.event.inputs.action }}"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: |
+          terraform plan \
+            -var="acme_email=${{ secrets.ACME_EMAIL }}" \
+            -var="cluster1_weight=${{ github.event.inputs.cluster1_weight || '100' }}" \
+            -var="cluster2_weight=${{ github.event.inputs.cluster2_weight || '0' }}" \
+            -out=tfplan
+
+      - name: Terraform Apply
+        if: ${{ github.event.inputs.action == 'apply' }}
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Destroy
+        if: ${{ github.event.inputs.action == 'destroy' }}
+        run: |
+          terraform destroy \
+            -var="acme_email=${{ secrets.ACME_EMAIL }}" \
+            -auto-approve

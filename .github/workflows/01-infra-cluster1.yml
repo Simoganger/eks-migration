@@ -1,0 +1,95 @@
+name: "01 · Infrastructure Cluster 1"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/cluster1/**"
+      - "infra/modules/**"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Terraform action"
+        required: true
+        default: "plan"
+        type: choice
+        options: [plan, apply, destroy]
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_VERSION: "1.9.8"
+  AWS_REGION: "us-east-1"
+  WORKING_DIR: "infra/cluster1"
+
+jobs:
+  terraform:
+    name: "Terraform ${{ github.event.inputs.action || 'plan' }}"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Plan
+        run: |
+          terraform plan \
+            -var="db_password=${{ secrets.DB_PASSWORD }}" \
+            -var="acme_email=${{ secrets.ACME_EMAIL }}" \
+            -out=tfplan
+        env:
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+
+      - name: Terraform Apply
+        if: ${{ github.event.inputs.action == 'apply' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+        run: terraform apply -auto-approve tfplan
+
+      - name: Capture Outputs
+        if: ${{ github.event.inputs.action == 'apply' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+        run: |
+          echo "CLUSTER_NAME=$(terraform output -raw cluster_name)" >> $GITHUB_OUTPUT
+          echo "RDS_HOST=$(terraform output -raw rds_host)" >> $GITHUB_OUTPUT
+        id: tf_outputs
+
+      - name: Update Kubeconfig
+        if: ${{ github.event.inputs.action == 'apply' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+        run: |
+          aws eks update-kubeconfig \
+            --name $(terraform output -raw cluster_name) \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Terraform Destroy
+        if: ${{ github.event.inputs.action == 'destroy' }}
+        run: |
+          terraform destroy \
+            -var="db_password=${{ secrets.DB_PASSWORD }}" \
+            -var="acme_email=${{ secrets.ACME_EMAIL }}" \
+            -auto-approve
+        env:
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}

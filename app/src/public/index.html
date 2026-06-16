@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TaskManager</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+           background: #f0f4f8; color: #1a202c; min-height: 100vh; }
+    header { background: #2d3748; color: #fff; padding: 1rem 2rem;
+             display: flex; align-items: center; gap: 1rem; }
+    header h1 { font-size: 1.5rem; }
+    .badge { background: #48bb78; color: #fff; border-radius: 9999px;
+             padding: 0.2rem 0.6rem; font-size: 0.75rem; }
+    main { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+    .card { background: #fff; border-radius: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,.1);
+            padding: 1.5rem; margin-bottom: 1.5rem; }
+    .card h2 { font-size: 1.1rem; margin-bottom: 1rem; color: #2d3748; }
+    .form-row { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    input, textarea, select {
+      border: 1px solid #cbd5e0; border-radius: 0.375rem; padding: 0.5rem 0.75rem;
+      font-size: 0.95rem; flex: 1; min-width: 150px; }
+    textarea { resize: vertical; min-height: 80px; }
+    button {
+      background: #4299e1; color: #fff; border: none; border-radius: 0.375rem;
+      padding: 0.5rem 1.25rem; font-size: 0.95rem; cursor: pointer; white-space: nowrap; }
+    button:hover { background: #3182ce; }
+    button.danger { background: #fc8181; }
+    button.danger:hover { background: #e53e3e; }
+    button.success { background: #48bb78; }
+    #task-list { list-style: none; }
+    .task-item {
+      background: #fff; border-radius: 0.375rem; border: 1px solid #e2e8f0;
+      padding: 1rem; margin-bottom: 0.75rem;
+      display: flex; align-items: flex-start; gap: 1rem; }
+    .task-info { flex: 1; }
+    .task-title { font-weight: 600; margin-bottom: 0.25rem; }
+    .task-desc  { font-size: 0.85rem; color: #718096; }
+    .task-meta  { font-size: 0.75rem; color: #a0aec0; margin-top: 0.25rem; }
+    .status-badge {
+      border-radius: 9999px; padding: 0.15rem 0.6rem; font-size: 0.75rem;
+      font-weight: 600; text-transform: capitalize; }
+    .status-todo       { background: #ebf8ff; color: #2b6cb0; }
+    .status-in-progress { background: #fefcbf; color: #975a16; }
+    .status-done       { background: #f0fff4; color: #276749; }
+    .actions { display: flex; gap: 0.5rem; align-items: center; }
+    #message { margin-top: 0.5rem; font-size: 0.875rem; color: #48bb78; min-height: 1.25rem; }
+    .cluster-info { font-size: 0.8rem; color: #a0aec0; margin-left: auto; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>TaskManager</h1>
+    <span class="badge">EKS Demo</span>
+    <span class="cluster-info" id="env-label"></span>
+  </header>
+
+  <main>
+    <div class="card">
+      <h2>New Task</h2>
+      <div class="form-row">
+        <input id="title" type="text" placeholder="Title *" required />
+        <select id="status">
+          <option value="todo">To Do</option>
+          <option value="in-progress">In Progress</option>
+          <option value="done">Done</option>
+        </select>
+      </div>
+      <div class="form-row" style="margin-top:.75rem">
+        <textarea id="description" placeholder="Description (optional)"></textarea>
+      </div>
+      <div class="form-row" style="margin-top:.75rem">
+        <button onclick="createTask()">Add Task</button>
+        <span id="message"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Tasks</h2>
+      <ul id="task-list"><li style="color:#a0aec0">Loading…</li></ul>
+    </div>
+  </main>
+
+  <script>
+    const API = '/api/tasks';
+
+    async function loadTasks() {
+      const res = await fetch(API);
+      const tasks = await res.json();
+      const ul = document.getElementById('task-list');
+      ul.innerHTML = tasks.length ? '' : '<li style="color:#a0aec0">No tasks yet.</li>';
+      tasks.forEach(t => {
+        const li = document.createElement('li');
+        li.className = 'task-item';
+        li.innerHTML = `
+          <div class="task-info">
+            <div class="task-title">${esc(t.title)}
+              <span class="status-badge status-${t.status}">${t.status}</span>
+            </div>
+            ${t.description ? `<div class="task-desc">${esc(t.description)}</div>` : ''}
+            ${t.attachment ? `<div class="task-meta">📎 ${esc(t.attachment)}</div>` : ''}
+            <div class="task-meta">#${t.id} · ${new Date(t.created_at).toLocaleString()}</div>
+          </div>
+          <div class="actions">
+            <input type="file" id="file-${t.id}" style="display:none"
+                   onchange="uploadFile(${t.id})" />
+            <button class="success" onclick="document.getElementById('file-${t.id}').click()">Attach</button>
+            <button class="danger" onclick="deleteTask(${t.id})">Delete</button>
+          </div>`;
+        ul.appendChild(li);
+      });
+    }
+
+    async function createTask() {
+      const title = document.getElementById('title').value.trim();
+      const description = document.getElementById('description').value.trim();
+      const status = document.getElementById('status').value;
+      if (!title) return flash('Title is required', 'red');
+
+      await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, description, status }),
+      });
+      document.getElementById('title').value = '';
+      document.getElementById('description').value = '';
+      flash('Task created!');
+      loadTasks();
+    }
+
+    async function deleteTask(id) {
+      await fetch(`${API}/${id}`, { method: 'DELETE' });
+      loadTasks();
+    }
+
+    async function uploadFile(id) {
+      const input = document.getElementById(`file-${id}`);
+      const fd = new FormData();
+      fd.append('file', input.files[0]);
+      await fetch(`${API}/${id}/attachments`, { method: 'POST', body: fd });
+      flash('File attached!');
+      loadTasks();
+    }
+
+    function flash(msg, color = '#48bb78') {
+      const el = document.getElementById('message');
+      el.style.color = color;
+      el.textContent = msg;
+      setTimeout(() => { el.textContent = ''; }, 3000);
+    }
+
+    function esc(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // Show environment
+    const env = document.getElementById('env-label');
+    fetch('/health').then(r => r.json()).then(d => {
+      env.textContent = `env: ${location.hostname}`;
+    });
+
+    loadTasks();
+  </script>
+</body>
+</html>

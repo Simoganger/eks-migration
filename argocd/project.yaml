@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: taskmanager
+  namespace: argocd
+spec:
+  description: "TaskManager application project"
+  sourceRepos:
+    - "*"
+  destinations:
+    - namespace: taskmanager
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: "cert-manager.io"
+      kind: Certificate
+    - group: "networking.istio.io"
+      kind: Gateway
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"

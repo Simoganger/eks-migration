@@ -1,0 +1,78 @@
+name: "03 · ArgoCD Bootstrap"
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster:
+        description: "Target cluster"
+        required: true
+        type: choice
+        options: [cluster1, cluster2]
+        default: cluster1
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: "us-east-1"
+
+jobs:
+  bootstrap:
+    name: "Bootstrap ArgoCD on ${{ github.event.inputs.cluster }}"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Determine cluster name
+        id: cluster
+        run: |
+          if [ "${{ github.event.inputs.cluster }}" = "cluster1" ]; then
+            echo "name=eks-cluster-1" >> $GITHUB_OUTPUT
+            echo "app=argocd/app-cluster1.yaml" >> $GITHUB_OUTPUT
+          else
+            echo "name=eks-cluster-2" >> $GITHUB_OUTPUT
+            echo "app=argocd/app-cluster2.yaml" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ steps.cluster.outputs.name }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Wait for ArgoCD pods
+        run: |
+          kubectl wait --for=condition=Ready pod \
+            -l app.kubernetes.io/name=argocd-server \
+            -n argocd --timeout=300s
+
+      - name: Apply ArgoCD Project
+        run: kubectl apply -f argocd/project.yaml
+
+      - name: Apply ArgoCD Application
+        run: kubectl apply -f ${{ steps.cluster.outputs.app }}
+
+      - name: Wait for Application sync
+        run: |
+          kubectl wait application/taskmanager \
+            -n argocd \
+            --for=jsonpath='{.status.health.status}'=Healthy \
+            --timeout=300s || true
+
+      - name: Get ArgoCD admin password
+        run: |
+          echo "ArgoCD initial admin password:"
+          kubectl get secret argocd-initial-admin-secret \
+            -n argocd \
+            -o jsonpath='{.data.password}' | base64 -d
+          echo ""
