@@ -17,15 +17,14 @@ resource "helm_release" "cert_manager" {
   create_namespace = true
   wait             = true
 
-  set {
-    name  = "crds.enabled"
-    value = "true"
-  }
-
-  set {
-    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = var.cert_manager_role_arn
-  }
+  values = [<<-YAML
+    crds:
+      enabled: true
+    serviceAccount:
+      annotations:
+        eks.amazonaws.com/role-arn: "${var.cert_manager_role_arn}"
+  YAML
+  ]
 }
 
 # ─── ClusterIssuer (Let's Encrypt via Route 53 DNS-01) ───────────────────────
@@ -91,15 +90,14 @@ resource "helm_release" "istiod" {
   namespace  = local.istio_namespace
   wait       = true
 
-  set {
-    name  = "pilot.resources.requests.cpu"
-    value = "100m"
-  }
-
-  set {
-    name  = "pilot.resources.requests.memory"
-    value = "128Mi"
-  }
+  values = [<<-YAML
+    pilot:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+  YAML
+  ]
 
   depends_on = [helm_release.istio_base]
 }
@@ -112,20 +110,14 @@ resource "helm_release" "istio_ingress" {
   namespace  = local.istio_namespace
   wait       = true
 
-  set {
-    name  = "service.type"
-    value = "LoadBalancer"
-  }
-
-  set {
-    name  = "service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type"
-    value = "nlb"
-  }
-
-  set {
-    name  = "service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-scheme"
-    value = "internet-facing"
-  }
+  values = [<<-YAML
+    service:
+      type: LoadBalancer
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: nlb
+        service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+  YAML
+  ]
 
   depends_on = [helm_release.istiod]
 }
@@ -154,10 +146,12 @@ resource "helm_release" "external_secrets" {
   create_namespace = true
   wait             = true
 
-  set {
-    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = var.eso_role_arn
-  }
+  values = [<<-YAML
+    serviceAccount:
+      annotations:
+        eks.amazonaws.com/role-arn: "${var.eso_role_arn}"
+  YAML
+  ]
 }
 
 # ─── ClusterSecretStore (AWS Secrets Manager) ────────────────────────────────
